@@ -3,6 +3,8 @@ name = "mail2rss"
 version = "0.1.0"
 description = "Fastmail JMAP to Atom bridge for newsletter email"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
   "bleach>=6.2.0",

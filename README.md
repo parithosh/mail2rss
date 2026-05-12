@@ -197,4 +197,4 @@ IDs. See `tests/fixtures/README.md`.
 
 ## License
 
-Not yet licensed. Treat as all-rights-reserved until a LICENSE file is added.
+MIT — see [LICENSE](LICENSE).
