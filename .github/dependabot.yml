@@ -1,0 +1,14 @@
+version: 2
+updates:
+  # Keep SHA-pinned GitHub Actions current. Dependabot opens a PR when the
+  # underlying major-version tag (e.g. actions/checkout@v4) moves to a new
+  # SHA; review the diff before merging.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      docker-actions:
+        patterns:
+          - "docker/*"
