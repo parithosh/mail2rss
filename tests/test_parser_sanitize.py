@@ -25,6 +25,29 @@ def test_parse_full_post_fixture() -> None:
     assert "email.mg2.substack.com/o/fixture" not in entry.body_html
 
 
+def test_sanitize_strips_style_block_and_content() -> None:
+    html = (
+        "<p>before</p>"
+        "<style>@media (max-width: 1024px) { .typography .foo { color: red; } }</style>"
+        "<p>after</p>"
+    )
+    cleaned = sanitize_html(html)
+    assert "before" in cleaned
+    assert "after" in cleaned
+    assert "@media" not in cleaned
+    assert "color: red" not in cleaned
+    assert ".typography" not in cleaned
+
+
+def test_sanitize_strips_script_block_and_content() -> None:
+    html = '<p>safe</p><script>alert("xss"); var x = 1;</script><p>more</p>'
+    cleaned = sanitize_html(html)
+    assert "safe" in cleaned
+    assert "more" in cleaned
+    assert "alert" not in cleaned
+    assert "var x" not in cleaned
+
+
 def test_sanitize_removes_dangerous_html() -> None:
     html = (
         '<p onclick="alert(1)">Hello</p>'

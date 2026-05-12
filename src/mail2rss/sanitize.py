@@ -53,6 +53,8 @@ PIXEL_HOST_MARKERS = (
     "substackcdn.com",
 )
 
+DROP_TAGS_WITH_CONTENT = frozenset({"style", "script", "noscript", "head", "title"})
+
 
 def sanitize_html(raw_html: str) -> str:
     rewritten = _SubstackHtmlRewriter().rewrite(raw_html)
@@ -144,6 +146,9 @@ class _SubstackHtmlRewriter(HTMLParser):
         attrs_dict = {key.lower(): value for key, value in attrs}
         if self.skip_depth:
             self.skip_depth += 1
+            return
+        if tag.lower() in DROP_TAGS_WITH_CONTENT:
+            self.skip_depth = 1
             return
         if tag.lower() == "a":
             href = attrs_dict.get("href")
