@@ -1,0 +1,36 @@
+services:
+  mail2rss:
+    build: .
+    container_name: mail2rss
+    env_file:
+      - .env
+    command: ["--config", "/app/config.toml"]
+    ports:
+      - "8080:8080"
+    volumes:
+      - mail2rss-data:/var/lib/mail2rss
+      - ./config.toml:/app/config.toml:ro
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5).read()\"",
+        ]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.mail2rss.rule=Host(`mail2rss.indenwolken.xyz`)
+      - traefik.http.routers.mail2rss.entrypoints=websecure
+      - traefik.http.routers.mail2rss.tls=true
+      - traefik.http.services.mail2rss.loadbalancer.server.port=8080
+
+volumes:
+  mail2rss-data:

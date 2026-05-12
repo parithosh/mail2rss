@@ -1,0 +1,45 @@
+[fastmail]
+token_env = "FASTMAIL_TOKEN"
+mailbox = "Substacks"
+session_url = "https://api.fastmail.com/jmap/session"
+
+[poll]
+interval_seconds = 900
+initial_backfill = 50
+max_changes = 200
+
+[push]
+enabled = false
+
+[output]
+dir = "/var/lib/mail2rss/feeds"
+aggregate_filename = "all.xml"
+max_entries_per_feed = 100
+
+[http]
+bind = "127.0.0.1:8080"
+feed_url_path_prefix = "/feeds"
+# Require a random secret segment in the feed URL path. Keep on (true) when the
+# feed is reachable from anywhere untrusted. Set to false for localhost/LAN-only
+# deployments where you'd rather just hit /feeds/all.xml.
+require_secret = true
+
+[filters]
+# All filters are off by default. mail2rss is a generic email->RSS bridge; opt
+# into the rules that match your source.
+#
+# require_list_id      - drop mail without a List-ID header.
+# require_canonical_url - drop mail where the parser can't extract an article
+#                        URL (works well for Substack posts, which always link
+#                        to /p/<slug>; will drop legitimate non-article mail).
+# subject_blocklist    - case-insensitive substrings; matching subjects dropped.
+# from_blocklist       - case-insensitive substrings matched against the From
+#                        address (envelope), e.g. "no-reply@" or "billing@".
+require_list_id = false
+require_canonical_url = false
+subject_blocklist = []
+from_blocklist = []
+
+[log]
+level = "info"
+format = "json"

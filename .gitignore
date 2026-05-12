@@ -1,0 +1,22 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.pyc
+*.db
+*.sqlite
+feeds/
+.env
+config.toml
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# sops-encrypted secrets, if any
+*.sops.*
+*.sops.yaml
+*.sops.json

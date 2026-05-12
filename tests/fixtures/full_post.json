@@ -1,0 +1,21 @@
+{
+  "id": "fixture-email-1",
+  "messageId": ["fixture-message-1@example.invalid"],
+  "from": [{"name": "Example Publication", "email": "posts@example.invalid"}],
+  "subject": "[Example Publication] Paid Post Title",
+  "receivedAt": "2026-05-11T10:00:00Z",
+  "headers": [
+    {
+      "name": "List-ID",
+      "value": "Example Publication <example.substack.com>"
+    }
+  ],
+  "htmlBody": [{"partId": "html-1"}],
+  "bodyValues": {
+    "html-1": {
+      "isEncodingProblem": false,
+      "isTruncated": false,
+      "value": "<html><body><h1>Paid Post Title</h1><p>Synthetic article paragraph.</p><a href=\"https://example.substack.com/p/paid-post-title\">Read online</a><img src=\"https://email.mg2.substack.com/o/fixture\" width=\"1\" height=\"1\"><script>alert('x')</script></body></html>"
+    }
+  }
+}
