@@ -1,206 +1,200 @@
 # mail2rss
 
-A single-tenant Fastmail JMAP to Atom bridge for Substack newsletters.
+A small Fastmail → Atom bridge. Point it at a folder in your Fastmail account,
+get an RSS/Atom feed of the messages in it. Useful for newsletters (Substack
+and others), mailing lists, or any service that emails you instead of offering
+a feed.
 
-`mail2rss` polls a configured Fastmail folder, parses Substack newsletter
-emails, sanitizes the HTML, stores parsed entries in SQLite, writes Atom feeds,
-and serves those feeds behind a long random URL secret.
+- Polls Fastmail over JMAP, no IMAP and no third-party relays.
+- Sanitizes the HTML before serving it (no scripts, no tracking pixels).
+- Stores entries in SQLite so historical posts stay in the feed even if the
+  source mail is later deleted.
+- Serves Atom 1.0 over HTTP for FreshRSS / Miniflux / NetNewsWire / etc.
+- Per-publication feeds (auto-detected from `List-ID` / `From`) plus an
+  aggregate `all.xml`.
 
-## Status
-
-Implemented v1:
-
-- poll-based Fastmail JMAP sync
-- SQLite state and idempotent entry storage
-- Substack publication detection from `List-ID` / `From`
-- HTML sanitization and basic Substack tracking cleanup
-- per-publication Atom feeds plus `all.xml`
-- `/healthz` and `/feeds/<secret>/<slug>.xml`
-- Docker image and compose skeleton
-
-Deferred:
-
-- JMAP EventSource push
-- explicit purge command
-- auth in front of feed URLs
-- live Fastmail/FreshRSS acceptance testing
-
-## Fastmail Setup
-
-1. Create a Fastmail API token with JMAP core and mail access.
-2. Mark the token read-only in the Fastmail UI.
-3. Create a Fastmail rule or Sieve script that moves Substack messages into a
-   dedicated folder, default `Substacks`.
-4. Put the token in an environment file:
+## Quickstart (Docker Compose)
 
 ```sh
-FASTMAIL_TOKEN=your-token-here
+git clone https://github.com/parithosh/mail2rss.git
+cd mail2rss
+
+# 1. Fastmail API token (read-only, mail scope is enough)
+cp .env.example .env
+$EDITOR .env          # set FASTMAIL_TOKEN=fmu1-...
+
+# 2. Pick a mailbox + tweak settings
+cp config.example.toml config.toml
+$EDITOR config.toml   # at minimum: [fastmail].mailbox
+
+# 3. Run
+docker compose up -d --build
+
+# 4. Find the feed URLs (logged on every startup)
+docker compose logs mail2rss | grep feed_urls_ready
 ```
 
-Do not commit the token or bake it into the image.
+You'll see something like:
+
+```json
+{"event": "feed_urls_ready", "bind": "0.0.0.0:8080", "paths": ["/feeds/<secret>/all.xml", "/feeds/<secret>/<pub>.xml"]}
+```
+
+Subscribe your reader to `http://<host>:8080/feeds/<secret>/all.xml`.
+
+## Fastmail setup
+
+1. Create an API token in Fastmail settings → Privacy & Security → API tokens.
+2. Give it **JMAP core** + **Mail (read-only)** scopes.
+3. (Optional but recommended) Set up a Sieve rule that files newsletter mail
+   into a dedicated folder, e.g. `Newsletters` or `Substack`. Point
+   `[fastmail].mailbox` at that folder name. The lookup is exact-match.
+
+The token is never written to disk or logs — only the four-character prefix
+(`fmu1`) is logged so you can confirm the right one loaded.
 
 ## Configuration
 
-Start from [config.example.toml](config.example.toml).
+`config.toml` keys (full example in `config.example.toml`):
 
-Important defaults:
+| Section / key | Default | Notes |
+| --- | --- | --- |
+| `[fastmail].mailbox` | `Substacks` | Exact folder name in Fastmail. |
+| `[fastmail].token_env` | `FASTMAIL_TOKEN` | Env var to read the token from. |
+| `[poll].interval_seconds` | `900` | 15 min. Min 30 s. |
+| `[poll].initial_backfill` | `50` | Messages pulled on first sync. |
+| `[output].dir` | `/var/lib/mail2rss/feeds` | Where Atom files are written. |
+| `[output].max_entries_per_feed` | `100` | Per `<slug>.xml` and `all.xml`. |
+| `[http].bind` | `127.0.0.1:8080` | Use `0.0.0.0:8080` with Docker port mapping. |
+| `[http].require_secret` | `true` | See **Feed URL security** below. |
+| `[filters].*` | all off | See **Filtering**. |
+| `[log].level` / `[log].format` | `info` / `json` | |
 
-- Fastmail folder: `Substacks`
-- poll interval: `900` seconds
-- feed output: `/var/lib/mail2rss/feeds`
-- HTTP bind: `127.0.0.1:8080`
-- feed path prefix: `/feeds`
+### Feed URL security
 
-The daemon also stores SQLite state in the parent of the feed directory by
-default: `/var/lib/mail2rss/mail2rss.db`.
+By default, feeds live at `/feeds/<random-secret>/all.xml`. The secret is
+generated on first run, stored in SQLite, and treated as a bearer token
+embedded in the URL — anyone with the URL can read the feed. The full path
+list is logged at boot under the `feed_urls_ready` event.
 
-## Local Development
+For local-only deployments, you can drop the secret:
 
-Install dependencies and run checks:
+```toml
+[http]
+bind = "127.0.0.1:8080"
+require_secret = false
+```
+
+Feeds then live at `/feeds/all.xml` and `/feeds/<slug>.xml`. Only do this when
+the bind address is unreachable from the outside (loopback, private network,
+or a `127.0.0.1:8080:8080` Docker port mapping).
+
+If you expose `mail2rss` publicly, either keep the secret on or put proper
+auth (Traefik / Caddy / nginx basic-auth, OAuth proxy, VPN, etc.) in front of
+it.
+
+### Filtering
+
+`mail2rss` is a generic email → RSS bridge: by default every message in the
+configured mailbox becomes a feed entry. The `[filters]` block lets you opt
+into per-source noise filters without baking assumptions into the parser.
+
+```toml
+[filters]
+require_list_id = false        # drop mail without a List-ID header
+require_canonical_url = false  # drop mail when the parser can't extract an article URL
+subject_blocklist = []         # case-insensitive substring match on Subject
+from_blocklist = []            # case-insensitive substring match on the From address
+```
+
+Combinations that work well in practice:
+
+- **Substack-only mailbox**: `require_canonical_url = true` catches most
+  transactional mail (verification codes, payment receipts, "Premium active",
+  recommendations) because they don't link to a `/p/<slug>` post page.
+- **Mailing list / Google Groups**: `require_list_id = true` filters out
+  direct replies and one-off mail to the same address.
+- **Mixed sources**: layer `subject_blocklist = ["verification code", "payment
+  receipt"]` and `from_blocklist = ["no-reply@", "billing@"]` on top.
+
+Skipped messages are logged at info as `mail_skipped` with a `reason` field
+(`missing_list_id`, `missing_canonical_url`, `subject_blocked:<pattern>`,
+`from_blocked:<pattern>`) so you can iterate on rules from real data.
+
+## Health and observability
+
+`/healthz` returns JSON with the daemon's current state — useful for Docker
+healthchecks, k8s probes, or just a quick `curl` from the host:
+
+```json
+{
+  "healthy": true,
+  "started_at": "...",
+  "last_successful_poll": "...",
+  "last_failed_poll": null,
+  "last_error": null,
+  "current_backoff_seconds": 0.0,
+  "shutting_down": false
+}
+```
+
+Health goes degraded before the first successful poll, and if the last
+success is older than twice the poll interval.
+
+When called from `127.0.0.1`/`::1`, `/healthz?show_url=1` also returns the
+current feed paths — handy if you've lost the boot log.
+
+Logs are structured JSON; key events:
+
+| event | meaning |
+| --- | --- |
+| `feed_urls_ready` | Atom files written and HTTP server is up. |
+| `poll_completed` | Per-cycle summary: `fetched_count`, `inserted_count`, `skipped_count`, `feed_count`. |
+| `mail_skipped` | An incoming mail was dropped by `[filters]`; includes `reason`. |
+| `poll_failed` | Polling errored; includes `backoff_seconds` until retry. |
+| `canonical_url_backfilled` | Older entries got article URLs after a parser improvement. |
+
+Email-identifying fields in logs are salted-hashed; raw subjects, addresses,
+bodies, and JMAP/Message-IDs never appear.
+
+## Running without Docker
 
 ```sh
+uv sync
+FASTMAIL_TOKEN=fmu1-... uv run mail2rss --config config.toml
+```
+
+If `--config` is omitted, built-in defaults are used. SQLite lands at
+`/var/lib/mail2rss/mail2rss.db` by default; override with `db_path` at the
+top level of `config.toml` if you'd rather keep it elsewhere.
+
+## Development
+
+```sh
+uv sync --all-extras
 uv run ruff check
 uv run ruff format --check
 uv run mypy src tests
 uv run pytest
 ```
 
-Run the CLI:
+Test fixtures under `tests/fixtures/` must be anonymized — never commit real
+email addresses, private article text, unsubscribe links, or raw JMAP/blob
+IDs. See `tests/fixtures/README.md`.
 
-```sh
-FASTMAIL_TOKEN=... uv run mail2rss --config config.toml
-```
+## Security notes
 
-If `--config` is omitted, built-in defaults are used.
-
-## Feed URLs
-
-On first run, `mail2rss` generates a random feed URL secret and stores it in
-SQLite. Feed URLs look like:
-
-```text
-/feeds/<secret>/all.xml
-/feeds/<secret>/<publication-slug>.xml
-```
-
-The full path list is logged at boot as `feed_urls_ready` — grab it from
-`docker logs mail2rss`, no exec needed. `/healthz?show_url=1` (localhost only)
-returns the same list.
-
-FreshRSS can subscribe to those paths through Traefik, for example:
-
-```text
-https://mail2rss.indenwolken.xyz/feeds/<secret>/all.xml
-```
-
-Treat the secret path as bearer-token-equivalent. Anyone with the URL can fetch
-the feed unless additional auth is placed in front of it.
-
-## Filtering ingested mail
-
-`mail2rss` is a generic email→RSS bridge. By default it ingests every message
-in the configured mailbox. The `[filters]` config block lets you opt into
-per-source rules without baking assumptions into the parser:
-
-```toml
-[filters]
-require_list_id = false        # drop mail without a List-ID header
-require_canonical_url = false  # drop mail when the parser can't find an article URL
-subject_blocklist = []         # case-insensitive substring match on the subject
-from_blocklist = []            # case-insensitive substring match on the From address
-```
-
-Each rule is independent and additive. Examples:
-
-- **Substack newsletters only**: `require_canonical_url = true` catches
-  most transactional mail (verification codes, payment receipts, "Premium
-  active", recommendations) because they don't link to a `/p/<slug>` page.
-- **Generic discussion list**: `require_list_id = true` is the right filter
-  when every legitimate post carries a List-ID and you want to ignore replies
-  sent directly to you.
-- **Belt-and-suspenders**: combine with `subject_blocklist = ["verification"]`
-  and `from_blocklist = ["no-reply@"]` for sources where the same domain sends
-  both newsletters and transactional mail.
-
-Skipped messages are logged at info level as `mail_skipped` with a `reason`
-field (`missing_list_id`, `missing_canonical_url`, `subject_blocked:<pattern>`,
-`from_blocked:<pattern>`).
-
-### Disabling the URL secret
-
-For localhost/LAN-only deployments, set `http.require_secret = false` in the
-config. Feeds are then served at `/feeds/all.xml` and
-`/feeds/<publication-slug>.xml` with no secret segment. Only do this when you
-trust everyone who can reach the bind address — there is no other auth on the
-feed endpoints. Pair with `bind = "127.0.0.1:8080"` or a `127.0.0.1:8080:8080`
-Docker port mapping to keep it off your LAN.
-
-## Health
-
-`/healthz` returns JSON with:
-
-- whether the service is currently healthy
-- startup time
-- last successful poll
-- last failed poll
-- last error
-- current backoff
-- shutdown state
-
-Health is degraded before the first successful poll and when the last successful
-poll is older than twice the configured poll interval.
-
-## Docker
-
-Build:
-
-```sh
-docker build -t mail2rss:local .
-```
-
-Smoke test the hardened image:
-
-```sh
-docker run --rm --read-only --cap-drop=ALL \
-  --security-opt=no-new-privileges \
-  mail2rss:local --help
-```
-
-Compose:
-
-```sh
-docker compose up -d --build
-```
-
-The compose file expects `.env` to contain `FASTMAIL_TOKEN`. It mounts a named
-volume at `/var/lib/mail2rss` for SQLite state and generated feeds.
-
-## Security Notes
-
-- The Fastmail token is read from an environment variable only.
-- Raw tokens, subjects, sender addresses, message bodies, raw JMAP ids, and raw
-  message ids must not appear in logs.
-- Logs use salted, truncated hashes for email correlation.
-- Already-published entries stay in feeds even if the source message is later
-  removed from the Fastmail folder.
-- Atom files are written with atomic temp-file replacement.
+- The Fastmail token is read from an environment variable only and never
+  persisted by the daemon.
 - SQLite is created with `0600` permissions.
+- Atom files are written via atomic temp-file replace so readers never see a
+  truncated feed.
+- HTML is sanitized via `bleach` with a strict allowlist (no scripts, no
+  iframes, no event handlers). Substack tracking pixels and unsubscribe
+  footers are stripped before sanitization.
+- Already-published entries stay in feeds even if the source mail is later
+  deleted from the Fastmail folder — readers won't randomly lose history.
 
-## Test Fixtures
+## License
 
-Fixtures under `tests/fixtures/` must be anonymized. See
-[tests/fixtures/README.md](tests/fixtures/README.md).
-
-Never commit real email addresses, private article text, tracking tokens,
-unsubscribe URLs, raw JMAP ids, raw blob ids, or raw message ids.
-
-## Live Acceptance
-
-Before relying on the deployment, still run the live checks from
-[IMPLEMENTATION_PLAN.MD](IMPLEMENTATION_PLAN.MD):
-
-1. Poll a real Substack message from Fastmail.
-2. Subscribe FreshRSS to `all.xml` and one publication feed.
-3. Validate generated Atom through W3C Feed Validator.
-4. Rotate the Fastmail token and verify clean failure/restart.
-5. Simulate a Fastmail 503 and verify backoff/recovery.
+Not yet licensed. Treat as all-rights-reserved until a LICENSE file is added.

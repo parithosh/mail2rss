@@ -8,9 +8,6 @@ interval_seconds = 900
 initial_backfill = 50
 max_changes = 200
 
-[push]
-enabled = false
-
 [output]
 dir = "/var/lib/mail2rss/feeds"
 aggregate_filename = "all.xml"

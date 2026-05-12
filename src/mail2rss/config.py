@@ -19,10 +19,6 @@ class PollConfig(BaseModel):
     max_changes: int = Field(default=200, ge=1, le=1000)
 
 
-class PushConfig(BaseModel):
-    enabled: bool = False
-
-
 class OutputConfig(BaseModel):
     dir: Path = Path("/var/lib/mail2rss/feeds")
     aggregate_filename: str = "all.xml"
@@ -57,7 +53,6 @@ class LogConfig(BaseModel):
 class AppConfig(BaseModel):
     fastmail: FastmailConfig = Field(default_factory=FastmailConfig)
     poll: PollConfig = Field(default_factory=PollConfig)
-    push: PushConfig = Field(default_factory=PushConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     http: HttpConfig = Field(default_factory=HttpConfig)
     filters: FilterConfig = Field(default_factory=FilterConfig)
