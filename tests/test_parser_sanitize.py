@@ -39,6 +39,28 @@ def test_sanitize_strips_style_block_and_content() -> None:
     assert ".typography" not in cleaned
 
 
+def test_sanitize_handles_void_elements_inside_head() -> None:
+    # <meta> is a void element. In a previous version the rewriter incremented
+    # skip_depth for it but never decremented (no </meta>), leaving the rest of
+    # the document trapped inside the <head>-drop block. Substack's emails open
+    # with exactly this shape and that bug ate the entire <body>.
+    html = (
+        '<html lang="en">'
+        "<head>"
+        '<meta charset="utf-8">'
+        "<title>Post Title</title>"
+        "<style>@media (max-width: 1024px) { .x { color: red; } }</style>"
+        "</head>"
+        "<body><p>real article body</p></body>"
+        "</html>"
+    )
+    cleaned = sanitize_html(html)
+    assert "real article body" in cleaned
+    assert "Post Title" not in cleaned
+    assert "@media" not in cleaned
+    assert "color: red" not in cleaned
+
+
 def test_sanitize_strips_script_block_and_content() -> None:
     html = '<p>safe</p><script>alert("xss"); var x = 1;</script><p>more</p>'
     cleaned = sanitize_html(html)

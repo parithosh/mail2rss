@@ -55,6 +55,25 @@ PIXEL_HOST_MARKERS = (
 
 DROP_TAGS_WITH_CONTENT = frozenset({"style", "script", "noscript", "head", "title"})
 
+VOID_ELEMENTS = frozenset(
+    {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+    }
+)
+
 
 def sanitize_html(raw_html: str) -> str:
     rewritten = _SubstackHtmlRewriter().rewrite(raw_html)
@@ -144,18 +163,23 @@ class _SubstackHtmlRewriter(HTMLParser):
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attrs_dict = {key.lower(): value for key, value in attrs}
+        tag_lower = tag.lower()
         if self.skip_depth:
-            self.skip_depth += 1
+            # Void elements have no closing tag, so they must not deepen the
+            # skip-nesting counter — otherwise the unmatched increment would
+            # leave skip_depth elevated forever and swallow the body.
+            if tag_lower not in VOID_ELEMENTS:
+                self.skip_depth += 1
             return
-        if tag.lower() in DROP_TAGS_WITH_CONTENT:
+        if tag_lower in DROP_TAGS_WITH_CONTENT:
             self.skip_depth = 1
             return
-        if tag.lower() == "a":
+        if tag_lower == "a":
             href = attrs_dict.get("href")
             if href and is_footer_href(href):
                 self.skip_depth = 1
                 return
-        if tag.lower() == "img":
+        if tag_lower == "img":
             src = attrs_dict.get("src")
             if src and is_tracking_pixel(
                 src, attrs_dict.get("width"), attrs_dict.get("height")
@@ -169,14 +193,18 @@ class _SubstackHtmlRewriter(HTMLParser):
             lowered_key = key.lower()
             if lowered_key.startswith("on"):
                 continue
-            if tag.lower() == "a" and lowered_key == "href":
+            if tag_lower == "a" and lowered_key == "href":
                 value = rewrite_substack_redirect(value)
             rewritten_attrs.append((key, value))
         self.parts.append(_format_start_tag(tag, rewritten_attrs))
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        # <tag/> is a self-balanced unit; inside a skip block it must not
+        # change skip_depth at all.
+        if self.skip_depth:
+            return
         self.handle_starttag(tag, attrs)
-        if not self.skip_depth and tag.lower() not in {"br", "hr", "img"}:
+        if not self.skip_depth and tag.lower() not in VOID_ELEMENTS:
             self.parts.append(f"</{tag}>")
 
     def handle_endtag(self, tag: str) -> None:
