@@ -79,24 +79,16 @@ def _render_feed(
         fe.updated(published)
         fe.author({"name": entry.publication_name})
         if entry.canonical_url:
-            fe.link(href=entry.canonical_url)
-            LOGGER.debug(
-                "feed_entry_rendered",
-                feed_id=feed_id,
-                jmap_id=entry.jmap_id,
-                publication_slug=entry.publication_slug,
-                mode="link",
-                canonical_url=entry.canonical_url,
-            )
-        else:
-            fe.content(entry.body_html, type="html")
-            LOGGER.debug(
-                "feed_entry_rendered",
-                feed_id=feed_id,
-                jmap_id=entry.jmap_id,
-                publication_slug=entry.publication_slug,
-                mode="embedded",
-            )
+            fe.link(href=entry.canonical_url, rel="alternate")
+        fe.content(entry.body_html, type="html")
+        LOGGER.debug(
+            "feed_entry_rendered",
+            feed_id=feed_id,
+            jmap_id=entry.jmap_id,
+            publication_slug=entry.publication_slug,
+            has_link=entry.canonical_url is not None,
+            canonical_url=entry.canonical_url,
+        )
     return cast(bytes, fg.atom_str(pretty=True))
 
 

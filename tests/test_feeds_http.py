@@ -32,7 +32,7 @@ def test_feed_generation(tmp_path: Path) -> None:
     db.close()
 
 
-def test_entry_with_canonical_url_emits_link_and_omits_content(tmp_path: Path) -> None:
+def test_entry_with_canonical_url_emits_link_and_keeps_content(tmp_path: Path) -> None:
     db = Database(tmp_path / "mail2rss.db")
     db.migrate()
     db.insert_entry(
@@ -44,12 +44,14 @@ def test_entry_with_canonical_url_emits_link_and_omits_content(tmp_path: Path) -
     xml = (tmp_path / "feeds" / "all.xml").read_text()
 
     assert 'href="https://example.substack.com/p/one"' in xml
-    assert "<content" not in xml
-    assert "&lt;p&gt;Body&lt;/p&gt;" not in xml
+    # Feed has two <link> elements: feed-level rel="self" and entry-level
+    # (rel defaults to "alternate" per Atom spec, feedgen omits the attribute).
+    assert xml.count("<link ") == 2
+    assert '<content type="html">&lt;p&gt;Body&lt;/p&gt;</content>' in xml
     db.close()
 
 
-def test_entry_without_canonical_url_embeds_body_and_omits_link(
+def test_entry_without_canonical_url_embeds_body_and_omits_entry_link(
     tmp_path: Path,
 ) -> None:
     db = Database(tmp_path / "mail2rss.db")
