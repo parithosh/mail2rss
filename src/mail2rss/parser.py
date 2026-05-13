@@ -5,8 +5,12 @@ from email.utils import parseaddr
 from html.parser import HTMLParser
 from urllib.parse import urlparse
 
+import structlog
+
 from mail2rss.models import ParsedEntry, Publication
 from mail2rss.sanitize import rewrite_substack_redirect, sanitize_html, text_to_html
+
+LOGGER = structlog.get_logger()
 
 LIST_ID_RE = re.compile(r"^\s*(?:(?P<name>.*?)\s*)?<(?P<id>[^>]+)>\s*$")
 SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -160,6 +164,8 @@ def _canonical_url(body_html: str, list_id: str | None) -> str | None:
     extractor.feed(body_html)
     domains = _candidate_domains(list_id)
     fallback: str | None = None
+    share_skipped = 0
+    rejected_hosts: list[str] = []
     for url in extractor.links:
         rewritten = rewrite_substack_redirect(url)
         parsed = urlparse(rewritten)
@@ -167,11 +173,30 @@ def _canonical_url(body_html: str, list_id: str | None) -> str | None:
         if not parsed.path.startswith("/p/"):
             continue
         if host in SHARE_LINK_HOSTS:
+            share_skipped += 1
             continue
         if host.endswith(".substack.com") or host in domains:
+            LOGGER.debug(
+                "canonical_url_extracted",
+                list_id=list_id,
+                result=rewritten,
+                reason="list_id_match" if host in domains else "substack_subdomain",
+                share_links_skipped=share_skipped,
+                total_links=len(extractor.links),
+            )
             return rewritten
+        rejected_hosts.append(host)
         if fallback is None:
             fallback = rewritten
+    LOGGER.debug(
+        "canonical_url_extracted",
+        list_id=list_id,
+        result=fallback,
+        reason="fallback" if fallback else "no_match",
+        share_links_skipped=share_skipped,
+        non_matching_hosts=sorted(set(rejected_hosts)),
+        total_links=len(extractor.links),
+    )
     return fallback
 
 

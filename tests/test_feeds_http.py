@@ -32,6 +32,43 @@ def test_feed_generation(tmp_path: Path) -> None:
     db.close()
 
 
+def test_entry_with_canonical_url_emits_link_and_keeps_content(tmp_path: Path) -> None:
+    db = Database(tmp_path / "mail2rss.db")
+    db.migrate()
+    db.insert_entry(
+        _entry("jmap-1", "msg@example.invalid", "https://example.substack.com/p/one")
+    )
+    db.commit()
+
+    write_all_feeds(db, tmp_path / "feeds", "", "/feeds", "all.xml", 100)
+    xml = (tmp_path / "feeds" / "all.xml").read_text()
+
+    assert 'href="https://example.substack.com/p/one"' in xml
+    # Feed has two <link> elements: feed-level rel="self" and entry-level
+    # (rel defaults to "alternate" per Atom spec, feedgen omits the attribute).
+    assert xml.count("<link ") == 2
+    assert '<content type="html">&lt;p&gt;Body&lt;/p&gt;</content>' in xml
+    db.close()
+
+
+def test_entry_without_canonical_url_embeds_body_and_omits_entry_link(
+    tmp_path: Path,
+) -> None:
+    db = Database(tmp_path / "mail2rss.db")
+    db.migrate()
+    db.insert_entry(_entry("jmap-1", "msg@example.invalid", None))
+    db.commit()
+
+    write_all_feeds(db, tmp_path / "feeds", "", "/feeds", "all.xml", 100)
+    xml = (tmp_path / "feeds" / "all.xml").read_text()
+
+    assert '<content type="html">&lt;p&gt;Body&lt;/p&gt;</content>' in xml
+    # The only <link> in the feed should be the feed-level rel="self".
+    assert xml.count("<link ") == 1
+    assert 'rel="self"' in xml
+    db.close()
+
+
 def test_http_secret_and_health(tmp_path: Path) -> None:
     feed_dir = tmp_path / "feeds"
     feed_dir.mkdir()

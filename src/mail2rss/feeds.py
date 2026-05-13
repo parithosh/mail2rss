@@ -6,11 +6,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import cast
 
+import structlog
 from feedgen.feed import FeedGenerator
 
 from mail2rss.db import Database
 from mail2rss.models import StoredEntry
 from mail2rss.parser import strip_publication_prefix
+
+LOGGER = structlog.get_logger()
 
 
 def write_all_feeds(
@@ -71,13 +74,21 @@ def _render_feed(
         fe = fg.add_entry()
         fe.id(f"urn:fastmail-email:{entry.jmap_id}")
         fe.title(strip_publication_prefix(entry.subject, entry.publication_name))
-        if entry.canonical_url:
-            fe.link(href=entry.canonical_url)
         published = _parse_datetime(entry.received_at)
         fe.published(published)
         fe.updated(published)
         fe.author({"name": entry.publication_name})
+        if entry.canonical_url:
+            fe.link(href=entry.canonical_url, rel="alternate")
         fe.content(entry.body_html, type="html")
+        LOGGER.debug(
+            "feed_entry_rendered",
+            feed_id=feed_id,
+            jmap_id=entry.jmap_id,
+            publication_slug=entry.publication_slug,
+            has_link=entry.canonical_url is not None,
+            canonical_url=entry.canonical_url,
+        )
     return cast(bytes, fg.atom_str(pretty=True))
 
 
