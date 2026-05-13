@@ -71,13 +71,14 @@ def _render_feed(
         fe = fg.add_entry()
         fe.id(f"urn:fastmail-email:{entry.jmap_id}")
         fe.title(strip_publication_prefix(entry.subject, entry.publication_name))
-        if entry.canonical_url:
-            fe.link(href=entry.canonical_url)
         published = _parse_datetime(entry.received_at)
         fe.published(published)
         fe.updated(published)
         fe.author({"name": entry.publication_name})
-        fe.content(entry.body_html, type="html")
+        if entry.canonical_url:
+            fe.link(href=entry.canonical_url)
+        else:
+            fe.content(entry.body_html, type="html")
     return cast(bytes, fg.atom_str(pretty=True))
 
 
