@@ -184,6 +184,8 @@ IDs. See `tests/fixtures/README.md`.
 
 ## Security notes
 
+- TLS requests require `certifi>=2026.10.19`, whose bundle removes the
+  `emSign ECC Root CA - G3` root after the eMudhra intermediate key compromise.
 - The Fastmail token is read from an environment variable only and never
   persisted by the daemon.
 - SQLite is created with `0600` permissions.
